@@ -1,0 +1,4 @@
+# Dependencies necessary or useful for development.
+flake8
+setuptools>=24.2  # Necessary for the `python_requires` option to `setup()`
+yapf
