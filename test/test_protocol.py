@@ -8,6 +8,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from collections import OrderedDict
+
 import pytest
 
 from tftp import protocol
@@ -446,3 +448,115 @@ def test_option_encoding_endtoend(name, value):
     opt = protocol.Option(name, value)
     exp_offset = len(name) + len(value) + 2
     assert protocol.Option.decode(opt.encode()) == (opt, exp_offset)
+
+
+class TestEncodeRequestPacket:
+    NOMINAL_CASES = [
+        ({
+            "is_write": True,
+            "filename": "test A",
+            "mode": protocol.TransferMode.MAIL,
+        }, b"\x00\x02test A\x00mail\x00"),
+        ({
+            "is_write": False,
+            "filename": "config",
+            "mode": protocol.TransferMode.NETASCII,
+        }, b"\x00\x01config\x00netascii\x00"),
+        (
+            {
+                "is_write": True,
+                "filename": "bob@example.org",
+                "mode": protocol.TransferMode.MAIL,
+                # OrderedDict is necessary to ensure the options are enumerated in the right order.
+                "options": OrderedDict([
+                    ("tsize", "304"),
+                    ("blocksize", "2048"),
+                ])
+            },
+            b"\x00\x02bob@example.org\x00mail\x00tsize\x00304\x00blocksize\x002048\x00"),
+        (
+            {
+                "is_write": False,
+                "filename": "config",
+                "mode": protocol.TransferMode.NETASCII,
+                # OrderedDict is necessary to ensure the options are enumerated in the right order.
+                "options": OrderedDict([
+                    ("timeout", "5"),
+                    ("windowsize", "16"),
+                ])
+            },
+            b"\x00\x01config\x00netascii\x00timeout\x005\x00windowsize\x0016\x00"),
+    ]
+
+    @pytest.mark.parametrize("packet_kwargs,exp_output", NOMINAL_CASES)
+    def test_nominal(self, packet_kwargs, exp_output):
+        """Tests nominal encoding of RequestPackets.
+        """
+        assert protocol.RequestPacket(**packet_kwargs).encode() == exp_output
+
+
+class TestDecodeRequestPacket:
+    NOMINAL_CASES = [
+        (b"\x00\x01purpose\x00netascii\x00", 0, {
+            "is_write": False,
+            "filename": "purpose",
+            "mode": protocol.TransferMode.NETASCII,
+        }),
+        (b"\x00\x02application\x00octet\x00", 0, {
+            "is_write": True,
+            "filename": "application",
+            "mode": protocol.TransferMode.OCTET,
+        }),
+        (b"\x00\x02application\x00octet\x00"
+         b"tsize\x0043221030\x00blksize\x001428\x00windowsize\x0016\x00", 0, {
+             "is_write": True,
+             "filename": "application",
+             "mode": protocol.TransferMode.OCTET,
+             "options": {
+                 "tsize": "43221030",
+                 "blksize": "1428",
+                 "windowsize": "16",
+             }
+         }),
+    ]
+
+    @pytest.mark.parametrize("packet,offset,exp_output_kwargs", NOMINAL_CASES)
+    def test_nominal(self, packet, offset, exp_output_kwargs):
+        """Tests nominal decoding of RequestPackets.
+        """
+        exp_output = protocol.RequestPacket(**exp_output_kwargs)
+        decoded, _ = protocol.RequestPacket.decode(packet, offset)
+        assert (decoded.is_write == exp_output.is_write and
+                decoded.options == exp_output.options and
+                decoded.filename == exp_output.filename and decoded.mode == exp_output.mode)
+
+    BAD_VALUE_CASES = [
+        (b"\x00\x03dowhat\x00netascii\x00", ValueError),  # Wrong packet type (correct structure)
+        (b"\x00\x01another\x00invalid\x00", protocol.TransferMode.UnknownTransferModeError),
+    ]
+
+    @pytest.mark.parametrize("packet,exp_error", BAD_VALUE_CASES)
+    def test_bad_values(self, packet, exp_error):
+        with pytest.raises(exp_error):
+            protocol.RequestPacket.decode(packet)
+
+    BAD_STRUCTURE_CASES = [
+        (b"\x00\x01uh oh the string isn't terminated", protocol.NullTerminatorNotFoundError),
+        (b"\x00\x02nomode??\x00", protocol.NullTerminatorNotFoundError),
+        (b"\x00\x01", protocol.NullTerminatorNotFoundError),  # No file name or transfer mode
+        (b"", protocol.struct.error),  # Entirely empty
+    ]
+
+    @pytest.mark.parametrize("packet,exp_error", BAD_STRUCTURE_CASES)
+    def test_bad_structure(self, packet, exp_error):
+        with pytest.raises(exp_error):
+            protocol.RequestPacket.decode(packet)
+
+
+class TestRequestPacketMisc:
+
+    def test_repr_coverage_only(self):
+        """Runs the RequestPacket.__repr__() function just to ensure that it doesn't raise
+        exceptions or cause parsing errors.
+        """
+        assert repr(protocol.RequestPacket(True, "file", protocol.TransferMode.ASCII))

@@ -15,6 +15,14 @@ import struct
 import constantly
 
 
+def _generate_repr(cls, *args, **kwargs):
+    """Generates a good-looking response to repr() and reduces repeated formatting boilerplate.
+    """
+    params = ["{!r}".format(arg) for arg in args]
+    params += ["{}={!r}".format(key, val) for key, val in kwargs.items()]
+    return "{}.{}({})".format(cls.__module__, cls.__name__, ", ".join(params))
+
+
 def encode_str(s):
     """Encodes the given string as a null-terminated ASCII byte array.
 
@@ -323,8 +331,7 @@ class Option(object):
         Returns:
             str: Accurate and succinct description of this Option.
         """
-        return "{}.{}({!r}, {!r})".format(self.__class__.__module__, self.__class__.__name__,
-                                          self.name, self.value)
+        return _generate_repr(self.__class__, self.name, self.value)
 
     def __eq__(self, other):
         """Compares two Options for equality in name and value.
@@ -386,3 +393,107 @@ class Option(object):
         name, next_offset = decode_str(byte_arr, offset)
         value, next_offset = decode_str(byte_arr, next_offset)
         return Option(name, value), next_offset
+
+
+class RequestPacket(object):
+    """Representation of a WRQ or RRQ packet.
+
+    The option negotiation format is described in RFC 2347.
+
+    Attributes:
+        is_write (bool): True if this is a WRQ; False if this is a RRQ.
+        filename (str): ASCII string naming the file to read or write. Must not contain null
+            characters.
+        mode (TransferMode): The transfer mode (i.e. ascii vs binary).
+        options (dict(str, str)): The TFTP options to include in the request.
+    """
+
+    def __init__(self, is_write, filename, mode, options=None):
+        """Creates a RequestPacket from Python values.
+
+        See also: RequestPacket.decode(), for parsing from a byte array.
+
+        Args:
+            is_write (bool): True if this is a WRQ; False if this is a RRQ.
+            filename (str): ASCII string naming the file to read or write. Must not contain null
+                characters.
+            mode (TransferMode): The transfer mode (i.e. ascii vs binary).
+            options (dict(str, str)): The TFTP options to include in the request. Default is None.
+        """
+        self.is_write = is_write
+        self.filename = filename
+        self.mode = mode
+        if options:
+            self.options = options
+        else:
+            self.options = {}
+
+    def __repr__(self):
+        """Returns a succinct representation of this RequestPacket as a string.
+
+        Returns:
+            str: Accurate and succinct description of this RequestPacket.
+        """
+        return _generate_repr(self.__class__,
+                              is_write=self.is_write,
+                              filename=self.filename,
+                              mode=self.mode)
+
+    def encode(self):
+        """Encodes the RequestPacket into a byte array to send it over the network.
+
+        Returns:
+            bytes: A byte array encoding the request packet.
+        """
+        if self.is_write:
+            packet_type = PacketType.WRQ
+        else:
+            packet_type = PacketType.RRQ
+
+        packet = []
+        packet.append(PacketType.encode(packet_type))
+        packet.append(encode_str(self.filename))
+        packet.append(TransferMode.encode(self.mode))
+
+        for name, value in self.options.items():
+            packet.append(Option(name, value).encode())
+
+        return b"".join(packet)
+
+    @staticmethod
+    def decode(byte_arr, offset=0):
+        """Decodes a RequestPacket from a byte array received from the network.
+
+        Args:
+            byte_arr (bytes): The byte array to decode.
+            offset (int): The offset into the byte array to start decoding. Defaults to 0.
+
+        Returns:
+            RequestPacket: The decoded packet.
+
+        Raises:
+            ValueError: If the packet given has the wrong type (i.e. not RRQ or WRQ).
+            PacketType.UnknownPacketTypeError: If the packet has an unrecognized type.
+            TransferMode.UnknownTransferModeError: If the packet has an unrecognized transfer mode.
+            NullTerminatorNotFoundError: If the packet was missing a filename, missing a transfer
+                mode, or included an incomplete option (i.e. name, but no value).
+            struct.error: If the packet didn't include enough bytes for the packet type field.
+        """
+        decoded_type, next_offset = PacketType.decode(byte_arr, offset)
+        if decoded_type == PacketType.WRQ:
+            is_write = True
+        elif decoded_type == PacketType.RRQ:
+            is_write = False
+        else:
+            # TODO: Should we make a custom exception type? Is TypeError better here?
+            raise ValueError("Not a request packet.", decoded_type, byte_arr, offset)
+
+        decoded_filename, next_offset = decode_str(byte_arr, next_offset)
+        decoded_mode, next_offset = TransferMode.decode(byte_arr, next_offset)
+
+        decoded_options = {}
+        while next_offset != len(byte_arr):
+            option, next_offset = Option.decode(byte_arr, next_offset)
+            decoded_options[option.name] = option.value
+
+        return RequestPacket(is_write, decoded_filename, decoded_mode, decoded_options), next_offset
