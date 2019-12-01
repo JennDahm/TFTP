@@ -453,7 +453,7 @@ class TestOption(object):
 
 class TestRequestPacket(object):
 
-    class TestEncodeRequestPacket(object):
+    class TestEncode(object):
         NOMINAL_CASES = [
             ({
                 "is_write": True,
@@ -499,7 +499,7 @@ class TestRequestPacket(object):
             """
             assert protocol.RequestPacket(**packet_kwargs).encode() == exp_output
 
-    class TestDecodeRequestPacket(object):
+    class TestDecode(object):
         NOMINAL_CASES = [
             (b"\x00\x01purpose\x00netascii\x00", 0, {
                 "is_write": False,
@@ -562,3 +562,75 @@ class TestRequestPacket(object):
         exceptions or cause parsing errors.
         """
         assert repr(protocol.RequestPacket(True, "file", protocol.TransferMode.ASCII))
+
+
+class TestErrorPacket(object):
+
+    class TestEncode(object):
+        NOMINAL_CASES = [
+            ({
+                "code": protocol.ErrorCode.FILE_NOT_FOUND,
+                "message": "File not found",
+            }, b"\x00\x05\x00\x01File not found\x00"),
+            ({
+                "code": protocol.ErrorCode.CUSTOM,
+                "message": "Hi there!",
+            }, b"\x00\x05\x00\x00Hi there!\x00"),
+            ({
+                "code": protocol.ErrorCode.OPTION_FAILURE,
+                "message": "windowsize too small",
+            }, b"\x00\x05\x00\x08windowsize too small\x00"),
+        ]
+
+        @pytest.mark.parametrize("packet_kwargs,exp_output", NOMINAL_CASES)
+        def test_nominal(self, packet_kwargs, exp_output):
+            """Tests nominal encoding of ErrorPackets.
+            """
+            assert protocol.ErrorPacket(**packet_kwargs).encode() == exp_output
+
+    class TestDecode(object):
+        NOMINAL_CASES = [
+            (b"\x00\x05\x00\x00This is a custom error\x00", 0, {
+                "code": protocol.ErrorCode.CUSTOM,
+                "message": "This is a custom error",
+            }),
+            (b"\x00\x05\x00\x06This file already exists.\x00", 0, {
+                "code": protocol.ErrorCode.FILE_EXISTS,
+                "message": "This file already exists.",
+            }),
+        ]
+
+        @pytest.mark.parametrize("packet,offset,exp_output_kwargs", NOMINAL_CASES)
+        def test_nominal(self, packet, offset, exp_output_kwargs):
+            """Tests nominal decoding of ErrorPackets.
+            """
+            exp_output = protocol.ErrorPacket(**exp_output_kwargs)
+            decoded, _ = protocol.ErrorPacket.decode(packet, offset)
+            assert (decoded.code == exp_output.code and decoded.message == exp_output.message)
+
+        BAD_VALUE_CASES = [
+            (b"\x00\x01\x00\x00what?\x00", ValueError),  # Wrong packet type (correct structure)
+            (b"\x00\x05\x00\x20strange error\x00", protocol.ErrorCode.UnknownErrorCodeError),
+        ]
+
+        @pytest.mark.parametrize("packet,exp_error", BAD_VALUE_CASES)
+        def test_bad_values(self, packet, exp_error):
+            with pytest.raises(exp_error):
+                protocol.ErrorPacket.decode(packet)
+
+        BAD_STRUCTURE_CASES = [
+            (b"\x00\x05\x00\x02", protocol.NullTerminatorNotFoundError),  # No error message
+            (b"\x00\x05", protocol.struct.error),  # No error code
+            (b"", protocol.struct.error),  # Entirely empty
+        ]
+
+        @pytest.mark.parametrize("packet,exp_error", BAD_STRUCTURE_CASES)
+        def test_bad_structure(self, packet, exp_error):
+            with pytest.raises(exp_error):
+                protocol.ErrorPacket.decode(packet)
+
+    def test_repr_coverage_only(self):
+        """Runs the ErrorPacket.__repr__() function just to ensure that it doesn't raise exceptions
+        or cause parsing errors.
+        """
+        assert repr(protocol.ErrorPacket(protocol.ErrorCode.NO_SUCH_USER, "No such user"))

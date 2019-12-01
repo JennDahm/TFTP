@@ -497,3 +497,73 @@ class RequestPacket(object):
             decoded_options[option.name] = option.value
 
         return RequestPacket(is_write, decoded_filename, decoded_mode, decoded_options), next_offset
+
+
+class ErrorPacket(object):
+    """Representation of an error packet.
+
+    Attributes:
+        code (ErrorCode): The error code.
+        message (str): ASCII error message. Must not contain null characters.
+    """
+
+    def __init__(self, code, message):
+        """Creates a RequestPacket from Python values.
+
+        See also: ErrorPacket.decode(), for parsing from a byte array.
+
+        Args:
+            code (ErrorCode): The error code.
+            message (str): ASCII error message. Must not contain null characters.
+        """
+        self.code = code
+        self.message = message
+
+    def __repr__(self):
+        """Returns a succinct representation of this ErrorPacket as a string.
+
+        Returns:
+            str: Accurate and succinct description of this ErrorPacket.
+        """
+        return _generate_repr(self.__class__, code=self.code, message=self.message)
+
+    def encode(self):
+        """Encodes the ErrorPacket into a byte array to send it over the network.
+
+        Returns:
+            bytes: A byte array encoding the error packet.
+        """
+        packet = []
+        packet.append(PacketType.encode(PacketType.ERROR))
+        packet.append(ErrorCode.encode(self.code))
+        packet.append(encode_str(self.message))
+        return b"".join(packet)
+
+    @staticmethod
+    def decode(byte_arr, offset=0):
+        """Decodes a ErrorPacket from a byte array received from the network.
+
+        Args:
+            byte_arr (bytes): The byte array to decode.
+            offset (int): The offset into the byte array to start decoding. Defaults to 0.
+
+        Returns:
+            ErrorPacket: The decoded packet.
+
+        Raises:
+            ValueError: If the packet given has the wrong type (i.e. not ERROR).
+            PacketType.UnknownPacketTypeError: If the packet has an unrecognized type.
+            ErrorCode.UnknownErrorCodeError: If we don't recognize the decoded error code.
+            NullTerminatorNotFoundError: If the packet was missing an error message.
+            struct.error: If the packet didn't include enough bytes for the packet type and error
+                code fields.
+        """
+        decoded_type, next_offset = PacketType.decode(byte_arr, offset)
+        if decoded_type != PacketType.ERROR:
+            # TODO: Should we make a custom exception type? Is TypeError better here?
+            raise ValueError("Not a request packet.", decoded_type, byte_arr, offset)
+
+        decoded_code, next_offset = ErrorCode.decode(byte_arr, next_offset)
+        decoded_msg, next_offset = decode_str(byte_arr, next_offset)
+
+        return ErrorPacket(decoded_code, decoded_msg), next_offset
