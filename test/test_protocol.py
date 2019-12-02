@@ -542,6 +542,8 @@ class TestRequestPacket(object):
 
         @pytest.mark.parametrize("packet,exp_error", BAD_VALUE_CASES)
         def test_bad_values(self, packet, exp_error):
+            """Tests the behaviour of RequestPacket.decode() when given input with invalid values.
+            """
             with pytest.raises(exp_error):
                 protocol.RequestPacket.decode(packet)
 
@@ -554,6 +556,8 @@ class TestRequestPacket(object):
 
         @pytest.mark.parametrize("packet,exp_error", BAD_STRUCTURE_CASES)
         def test_bad_structure(self, packet, exp_error):
+            """Tests the behaviour of RequestPacket.decode() when given badly structured input.
+            """
             with pytest.raises(exp_error):
                 protocol.RequestPacket.decode(packet)
 
@@ -615,6 +619,8 @@ class TestErrorPacket(object):
 
         @pytest.mark.parametrize("packet,exp_error", BAD_VALUE_CASES)
         def test_bad_values(self, packet, exp_error):
+            """Tests the behaviour of ErrorPacket.decode() when given input with invalid values.
+            """
             with pytest.raises(exp_error):
                 protocol.ErrorPacket.decode(packet)
 
@@ -626,6 +632,8 @@ class TestErrorPacket(object):
 
         @pytest.mark.parametrize("packet,exp_error", BAD_STRUCTURE_CASES)
         def test_bad_structure(self, packet, exp_error):
+            """Tests the behaviour of ErrorPacket.decode() when given badly structured input.
+            """
             with pytest.raises(exp_error):
                 protocol.ErrorPacket.decode(packet)
 

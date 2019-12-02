@@ -437,7 +437,8 @@ class RequestPacket(object):
         return _generate_repr(self.__class__,
                               is_write=self.is_write,
                               filename=self.filename,
-                              mode=self.mode)
+                              mode=self.mode,
+                              options=self.options)
 
     def encode(self):
         """Encodes the RequestPacket into a byte array to send it over the network.
@@ -508,7 +509,7 @@ class ErrorPacket(object):
     """
 
     def __init__(self, code, message):
-        """Creates a RequestPacket from Python values.
+        """Creates a ErrorPacket from Python values.
 
         See also: ErrorPacket.decode(), for parsing from a byte array.
 
@@ -561,7 +562,7 @@ class ErrorPacket(object):
         decoded_type, next_offset = PacketType.decode(byte_arr, offset)
         if decoded_type != PacketType.ERROR:
             # TODO: Should we make a custom exception type? Is TypeError better here?
-            raise ValueError("Not a request packet.", decoded_type, byte_arr, offset)
+            raise ValueError("Not an error packet.", decoded_type, byte_arr, offset)
 
         decoded_code, next_offset = ErrorCode.decode(byte_arr, next_offset)
         decoded_msg, next_offset = decode_str(byte_arr, next_offset)
