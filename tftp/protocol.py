@@ -81,6 +81,39 @@ class NullTerminatorNotFoundError(ValueError):
         self.offset = offset
 
 
+def encode_uint16(s):
+    """Encodes the given uint16 as a big-endian byte array.
+
+    Args:
+        s (int): The unsigned 16-bit integer to encode.
+
+    Returns:
+        bytes: A byte array encoding the uint16.
+
+    Raises:
+        struct.error: If the given integer is not within [0, 65535]
+    """
+    return struct.pack(">H", s)
+
+
+def decode_uint16(byte_arr, offset=0):
+    """Decodes a uint16 from the given byte array.
+
+    Args:
+        byte_arr (bytes): The byte array to decode.
+        offset (int): The offset into the byte array to start decoding. Defaults to 0.
+
+    Returns:
+        (int, int): A tuple of the uint16 decoded from the byte array and the offset of the first
+            byte following the encoded uint16.
+
+    Raises:
+        struct.error: If there are not at least two bytes left in the byte array starting at offset.
+    """
+    s, = struct.unpack_from(">H", byte_arr, offset)
+    return s, offset + 2
+
+
 class PacketType(constantly.Values):
     """Representation of the different packet types.
 
@@ -104,7 +137,7 @@ class PacketType(constantly.Values):
         Returns:
             bytes: The packet type encoded as a byte array.
         """
-        return struct.pack(">H", packet_type.value)
+        return encode_uint16(packet_type.value)
 
     @classmethod
     def decode(cls, byte_arr, offset=0):
@@ -123,9 +156,9 @@ class PacketType(constantly.Values):
             struct.error: If there weren't enough bytes left in the byte array to decode a packet
                 type.
         """
-        code, = struct.unpack_from(">H", byte_arr, offset)
+        code, next_offset = decode_uint16(byte_arr, offset)
         try:
-            return (cls.lookupByValue(code), offset + 2)
+            return (cls.lookupByValue(code), next_offset)
         except ValueError:
             raise_from(cls.UnknownPacketTypeError(code, byte_arr, offset), None)
 
@@ -249,7 +282,7 @@ class ErrorCode(constantly.Values):
         Returns:
             bytes: The error code encoded as a byte array.
         """
-        return struct.pack(">H", error_code.value)
+        return encode_uint16(error_code.value)
 
     @classmethod
     def decode(cls, byte_arr, offset=0):
@@ -268,9 +301,9 @@ class ErrorCode(constantly.Values):
             struct.error: If there weren't enough bytes left in the byte array to decode an error
                 code.
         """
-        code, = struct.unpack_from(">H", byte_arr, offset)
+        code, next_offset = decode_uint16(byte_arr, offset)
         try:
-            return (cls.lookupByValue(code), offset + 2)
+            return (cls.lookupByValue(code), next_offset)
         except ValueError:
             raise_from(cls.UnknownErrorCodeError(code, byte_arr, offset), None)
 

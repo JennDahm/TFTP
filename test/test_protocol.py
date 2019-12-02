@@ -100,6 +100,56 @@ class TestStr(object):
         assert protocol.decode_str(protocol.encode_str("hello")) == ("hello", 6)
 
 
+class TestUint16(object):
+
+    class TestEncode(object):
+        NOMINAL_CASES = [
+            (44, b"\x00\x2c"),
+            (0, b"\x00\x00"),
+            (65535, b"\xff\xff"),
+            (3356, b"\x0d\x1c"),
+        ]
+
+        @pytest.mark.parametrize("value,exp_output", NOMINAL_CASES)
+        def test_nominal(self, value, exp_output):
+            """Tests nominal encoding of uint16s.
+            """
+            assert protocol.encode_uint16(value) == exp_output
+
+        BAD_VALUE_CASES = [
+            (-20, protocol.struct.error),
+            (66666, protocol.struct.error),
+        ]
+
+        @pytest.mark.parametrize("value,exp_error", BAD_VALUE_CASES)
+        def test_bad_values(self, value, exp_error):
+            """Tests encode_uint16() when given an integer that isn't a uint16.
+            """
+            with pytest.raises(exp_error):
+                protocol.encode_uint16(value)
+
+    class TestDecode(object):
+        NOMINAL_CASES = [
+            (b"\x00\x2c", 0, 44),
+            (b"\x00\x00", 0, 0),
+            (b"\xff\xff", 0, 65535),
+            (b"\x0d\x1c", 0, 3356),
+            (b"\x0d\x1c\x01", 1, 7169),
+        ]
+
+        @pytest.mark.parametrize("byte_arr,offset,exp_output", NOMINAL_CASES)
+        def test_nominal(self, byte_arr, offset, exp_output):
+            """Tests nominal decoding of uint16s.
+            """
+            assert protocol.decode_uint16(byte_arr, offset) == (exp_output, offset + 2)
+
+    @pytest.mark.parametrize("value", [23, 6603, 0, 0xFFFF])
+    def test_endtoend(self, value):
+        """Tests uint16 encoding end-to-end
+        """
+        assert protocol.decode_uint16(protocol.encode_uint16(value)) == (value, 2)
+
+
 class TestPacketType(object):
 
     class TestEncode(object):
