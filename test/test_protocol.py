@@ -12,357 +12,7 @@ from collections import OrderedDict
 
 import pytest
 
-from tftp import protocol
-
-
-class TestStr(object):
-
-    class TestEncode(object):
-        NOMINAL_CASES = [
-            ("hello world", b"hello world\x00"),
-            ("", b"\x00"),
-        ]
-
-        @pytest.mark.parametrize("input_str,output_bytes", NOMINAL_CASES)
-        def test_nominal(self, input_str, output_bytes):
-            """Tests nominal uses of encode_str().
-            """
-            assert protocol.encode_str(input_str) == output_bytes
-
-        NULL_CASES = [
-            "oh\x00no",
-            "at the end\x00",
-            "\x00at the beginning",
-            "\x00mult\x00iple\x00",
-        ]
-
-        @pytest.mark.parametrize("input_str", NULL_CASES)
-        def test_null(self, input_str):
-            """Tests cases where the input to encode_str() has a null character embedded in it.
-            """
-            with pytest.raises(ValueError):
-                protocol.encode_str(input_str)
-
-        BAD_ASCII_CASES = [
-            u"an em dash\u2014quite dashing",
-            "oh\x82bother",
-        ]
-
-        @pytest.mark.parametrize("input_str", BAD_ASCII_CASES)
-        def test_bad_ascii(self, input_str):
-            """Tests cases where the input to encode_str() is invalid ASCII.
-            """
-            with pytest.raises(ValueError):
-                protocol.encode_str(input_str)
-
-    class TestDecode(object):
-        NOMINAL_CASES = [
-            (b"hello world!\x00", 0, ("hello world!", 13)),
-            (b"hello world!\x00", 2, ("llo world!", 13)),
-            (b"hello world!\x00", 12, ("", 13)),
-            (b"file\x00octet\x00", 0, ("file", 5)),
-            (b"file\x00octet\x00", 5, ("octet", 11)),
-        ]
-
-        @pytest.mark.parametrize("input_bytes,offset,exp_output", NOMINAL_CASES)
-        def test_nominal(self, input_bytes, offset, exp_output):
-            """Tests nominal uses of protocol.decode_str().
-            """
-            assert protocol.decode_str(input_bytes, offset) == exp_output
-
-        NO_NULL_CASES = [
-            (b"hello world!", 0),
-            (b"file\x00octet", 5),
-        ]
-
-        @pytest.mark.parametrize("input_bytes,offset", NO_NULL_CASES)
-        def test_no_null(self, input_bytes, offset):
-            """Test cases where the input to decode is missing a null terminator.
-            """
-            with pytest.raises(protocol.NullTerminatorNotFoundError):
-                protocol.decode_str(input_bytes, offset)
-
-        BAD_ASCII_CASES = [
-            u"an em dash\u2014quite dashing".encode("utf-8"),
-            b"oh\x82bother",
-        ]
-
-        @pytest.mark.parametrize("input_bytes", BAD_ASCII_CASES)
-        def test_bad_ascii(self, input_bytes):
-            """Tests cases where the input to decode_str() is invalid ASCII.
-            """
-            with pytest.raises(ValueError):
-                protocol.decode_str(input_bytes, 0)
-
-    def test_endtoend(self):
-        """Tests string encoding end-to-end.
-        """
-        assert protocol.decode_str(protocol.encode_str("hello")) == ("hello", 6)
-
-
-class TestUint16(object):
-
-    class TestEncode(object):
-        NOMINAL_CASES = [
-            (44, b"\x00\x2c"),
-            (0, b"\x00\x00"),
-            (65535, b"\xff\xff"),
-            (3356, b"\x0d\x1c"),
-        ]
-
-        @pytest.mark.parametrize("value,exp_output", NOMINAL_CASES)
-        def test_nominal(self, value, exp_output):
-            """Tests nominal encoding of uint16s.
-            """
-            assert protocol.encode_uint16(value) == exp_output
-
-        BAD_VALUE_CASES = [
-            (-20, protocol.struct.error),
-            (66666, protocol.struct.error),
-        ]
-
-        @pytest.mark.parametrize("value,exp_error", BAD_VALUE_CASES)
-        def test_bad_values(self, value, exp_error):
-            """Tests encode_uint16() when given an integer that isn't a uint16.
-            """
-            with pytest.raises(exp_error):
-                protocol.encode_uint16(value)
-
-    class TestDecode(object):
-        NOMINAL_CASES = [
-            (b"\x00\x2c", 0, 44),
-            (b"\x00\x00", 0, 0),
-            (b"\xff\xff", 0, 65535),
-            (b"\x0d\x1c", 0, 3356),
-            (b"\x0d\x1c\x01", 1, 7169),
-        ]
-
-        @pytest.mark.parametrize("byte_arr,offset,exp_output", NOMINAL_CASES)
-        def test_nominal(self, byte_arr, offset, exp_output):
-            """Tests nominal decoding of uint16s.
-            """
-            assert protocol.decode_uint16(byte_arr, offset) == (exp_output, offset + 2)
-
-    @pytest.mark.parametrize("value", [23, 6603, 0, 0xFFFF])
-    def test_endtoend(self, value):
-        """Tests uint16 encoding end-to-end
-        """
-        assert protocol.decode_uint16(protocol.encode_uint16(value)) == (value, 2)
-
-
-class TestPacketType(object):
-
-    class TestEncode(object):
-        NOMINAL_CASES = [
-            (protocol.PacketType.RRQ, b"\x00\x01"),
-            (protocol.PacketType.WRQ, b"\x00\x02"),
-            (protocol.PacketType.DATA, b"\x00\x03"),
-            (protocol.PacketType.ACK, b"\x00\x04"),
-            (protocol.PacketType.ERROR, b"\x00\x05"),
-            (protocol.PacketType.OACK, b"\x00\x06"),
-        ]
-
-        @pytest.mark.parametrize("input_type,exp_output", NOMINAL_CASES)
-        def test_nominal(self, input_type, exp_output):
-            """Tests nominal uses of PacketType.encode()
-            """
-            assert protocol.PacketType.encode(input_type) == exp_output
-
-    class TestDecode(object):
-        NOMINAL_CASES = [
-            (b"\x00\x01", 0, protocol.PacketType.RRQ),
-            (b"\x00\x02", 0, protocol.PacketType.WRQ),
-            (b"\x00\x03", 0, protocol.PacketType.DATA),
-            (b"\x00\x04", 0, protocol.PacketType.ACK),
-            (b"\x00\x05", 0, protocol.PacketType.ERROR),
-            (b"\x00\x06", 0, protocol.PacketType.OACK),
-            (b"\xaf\x00\x06", 1, protocol.PacketType.OACK),
-            (b"\x00\x01\x00\x02", 2, protocol.PacketType.WRQ),
-            (b"\x00\x01\x00\x02", 0, protocol.PacketType.RRQ),
-        ]
-
-        @pytest.mark.parametrize("input_bytes,offset,exp_output", NOMINAL_CASES)
-        def test_nominal(self, input_bytes, offset, exp_output):
-            """Tests nominal uses of PacketType.decode()
-            """
-            assert protocol.PacketType.decode(input_bytes, offset) == (exp_output, offset + 2)
-
-        UNKNOWN_TYPE_CASES = [
-            b"\x00\x00",
-            b"\x00\x07",
-            b"\x00\x08",
-            b"\x00\x09",
-            b"\x00\x20",
-            b"\x01\x00",
-            b"\xFF\xFF",
-        ]
-
-        @pytest.mark.parametrize("input_bytes", UNKNOWN_TYPE_CASES)
-        def test_unknown_type(self, input_bytes):
-            """Tests parsing of unknown types.
-            """
-            with pytest.raises(protocol.PacketType.UnknownPacketTypeError):
-                protocol.PacketType.decode(input_bytes, 0)
-
-    @pytest.mark.parametrize("packet_type", [
-        protocol.PacketType.RRQ,
-        protocol.PacketType.WRQ,
-        protocol.PacketType.DATA,
-        protocol.PacketType.ACK,
-        protocol.PacketType.ERROR,
-        protocol.PacketType.OACK,
-    ])
-    def test_endtoend(self, packet_type):
-        """Tests end-to-end encoding and decoding of packet types.
-        """
-        assert protocol.PacketType.decode(protocol.PacketType.encode(packet_type)) == (packet_type,
-                                                                                       2)
-
-
-class TestTransferMode(object):
-
-    class TestEncode(object):
-        NOMINAL_CASES = [
-            (protocol.TransferMode.NETASCII, b"netascii\0"),
-            (protocol.TransferMode.OCTET, b"octet\0"),
-            (protocol.TransferMode.MAIL, b"mail\0"),
-            (protocol.TransferMode.ASCII, b"netascii\0"),
-            (protocol.TransferMode.TEXT, b"netascii\0"),
-            (protocol.TransferMode.BINARY, b"octet\0"),
-        ]
-
-        @pytest.mark.parametrize("transfer_mode,exp_output", NOMINAL_CASES)
-        def test_nominal(self, transfer_mode, exp_output):
-            """Tests nominal uses of TransferMode.encode().
-            """
-            assert protocol.TransferMode.encode(transfer_mode) == exp_output
-
-    class TestDecode(object):
-        NOMINAL_CASES = [
-            (b"netascii\0", 0, (protocol.TransferMode.NETASCII, 9)),
-            (b"octet\0", 0, (protocol.TransferMode.OCTET, 6)),
-            (b"mail\0", 0, (protocol.TransferMode.MAIL, 5)),
-            (b"mail\0netascii\0", 0, (protocol.TransferMode.MAIL, 5)),
-            (b"mail\0netascii\0", 5, (protocol.TransferMode.NETASCII, 14)),
-        ]
-
-        @pytest.mark.parametrize("input_bytes,offset,exp_output", NOMINAL_CASES)
-        def test_nominal(self, input_bytes, offset, exp_output):
-            """Tests nominal uses of PacketType.decode()
-            """
-            assert protocol.TransferMode.decode(input_bytes, offset) == exp_output
-
-        UNKNOWN_TYPE_CASES = [
-            (b"ascii\0", 0),  # The TFTP spec doesn't allow 'ascii' as an alias of 'netascii'.
-            (b"text\0", 0),  # The TFTP spec doesn't allow 'text' as an alias of 'netascii'.
-            (b"binary\0", 0),  # The TFTP spec doesn't allow 'binary' as an alias of 'octet'.
-            (b"email\0", 0),  # The TFTP spec doesn't allow 'email' as an alias of 'mail.
-            (b"netascii\0", 2),
-            (b"sldjf\0", 0),
-            (b"\0", 0),
-        ]
-
-        @pytest.mark.parametrize("input_bytes,offset", UNKNOWN_TYPE_CASES)
-        def test_unknown_type(self, input_bytes, offset):
-            """Tests parsing unknown transfer modes.
-            """
-            with pytest.raises(protocol.TransferMode.UnknownTransferModeError):
-                protocol.TransferMode.decode(input_bytes, offset)
-
-    @pytest.mark.parametrize(
-        "transfer_mode,exp_output",
-        [
-            (protocol.TransferMode.NETASCII, (protocol.TransferMode.NETASCII, 9)),
-            (protocol.TransferMode.OCTET, (protocol.TransferMode.OCTET, 6)),
-            (protocol.TransferMode.MAIL, (protocol.TransferMode.MAIL, 5)),
-            # Unfortunately, constantly doesn't have good support for aliases, and so ASCII !=
-            # NETASCII (etc.) even if that's my intention.
-            (protocol.TransferMode.ASCII, (protocol.TransferMode.NETASCII, 9)),
-            (protocol.TransferMode.TEXT, (protocol.TransferMode.NETASCII, 9)),
-            (protocol.TransferMode.BINARY, (protocol.TransferMode.OCTET, 6)),
-        ])
-    def test_endtoend(self, transfer_mode, exp_output):
-        """Tests end-to-end encoding and decoding of transfer mode.
-        """
-        assert protocol.TransferMode.decode(
-            protocol.TransferMode.encode(transfer_mode)) == exp_output
-
-
-class TestErrorCode(object):
-
-    class TestEncode(object):
-        NOMINAL_CASES = [
-            (protocol.ErrorCode.CUSTOM, b"\x00\x00"),
-            (protocol.ErrorCode.FILE_NOT_FOUND, b"\x00\x01"),
-            (protocol.ErrorCode.ACCESS_VIOLATION, b"\x00\x02"),
-            (protocol.ErrorCode.DISK_FULL, b"\x00\x03"),
-            (protocol.ErrorCode.ILLEGAL_OP, b"\x00\x04"),
-            (protocol.ErrorCode.UNKNOWN_ID, b"\x00\x05"),
-            (protocol.ErrorCode.FILE_EXISTS, b"\x00\x06"),
-            (protocol.ErrorCode.NO_SUCH_USER, b"\x00\x07"),
-            (protocol.ErrorCode.OPTION_FAILURE, b"\x00\x08"),
-        ]
-
-        @pytest.mark.parametrize("error_code,exp_output", NOMINAL_CASES)
-        def test_nominal(self, error_code, exp_output):
-            """Tests nominal uses of ErrorCode.encode()
-            """
-            assert protocol.ErrorCode.encode(error_code) == exp_output
-
-    class TestDecode(object):
-        NOMINAL_CASES = [
-            (b"\x00\x00", 0, protocol.ErrorCode.CUSTOM),
-            (b"\x00\x01", 0, protocol.ErrorCode.FILE_NOT_FOUND),
-            (b"\x00\x02", 0, protocol.ErrorCode.ACCESS_VIOLATION),
-            (b"\x00\x03", 0, protocol.ErrorCode.DISK_FULL),
-            (b"\x00\x04", 0, protocol.ErrorCode.ILLEGAL_OP),
-            (b"\x00\x05", 0, protocol.ErrorCode.UNKNOWN_ID),
-            (b"\x00\x06", 0, protocol.ErrorCode.FILE_EXISTS),
-            (b"\x00\x07", 0, protocol.ErrorCode.NO_SUCH_USER),
-            (b"\x00\x08", 0, protocol.ErrorCode.OPTION_FAILURE),
-            (b"\xe0\x00\x05", 1, protocol.ErrorCode.UNKNOWN_ID),
-            (b"\x00\x00\x00\x01", 0, protocol.ErrorCode.CUSTOM),
-            (b"\x00\x00\x00\x01", 2, protocol.ErrorCode.FILE_NOT_FOUND),
-        ]
-
-        @pytest.mark.parametrize("input_bytes,offset,exp_output", NOMINAL_CASES)
-        def test_nominal(self, input_bytes, offset, exp_output):
-            """Tests nominal uses of PacketType.decode()
-            """
-            assert protocol.ErrorCode.decode(input_bytes, offset) == (exp_output, offset + 2)
-
-        UNKNOWN_ERROR_CODES_CASES = [
-            b"\x00\x09",
-            b"\x00\x0a",
-            b"\x00\x0b",
-            b"\x00\x0c",
-            b"\x00\x20",
-            b"\x01\x00",
-            b"\xFF\xFF",
-        ]
-
-        @pytest.mark.parametrize("input_bytes", UNKNOWN_ERROR_CODES_CASES)
-        def test_unknown_error_code(self, input_bytes):
-            """Tests parsing of unknown error codes.
-            """
-            with pytest.raises(protocol.ErrorCode.UnknownErrorCodeError):
-                protocol.ErrorCode.decode(input_bytes, 0)
-
-    @pytest.mark.parametrize("error_code", [
-        protocol.ErrorCode.CUSTOM,
-        protocol.ErrorCode.FILE_NOT_FOUND,
-        protocol.ErrorCode.ACCESS_VIOLATION,
-        protocol.ErrorCode.DISK_FULL,
-        protocol.ErrorCode.ILLEGAL_OP,
-        protocol.ErrorCode.UNKNOWN_ID,
-        protocol.ErrorCode.FILE_EXISTS,
-        protocol.ErrorCode.NO_SUCH_USER,
-        protocol.ErrorCode.OPTION_FAILURE,
-    ])
-    def test_endtoend(self, error_code):
-        """Tests end-to-end encoding and decoding of error codes.
-        """
-        assert protocol.ErrorCode.decode(protocol.ErrorCode.encode(error_code)) == (error_code, 2)
+from tftp import protocol, primitives
 
 
 class TestOption(object):
@@ -428,7 +78,7 @@ class TestOption(object):
         def test_missing_null(self, input_bytes, offset):
             """Tests cases where null terminators were left out.
             """
-            with pytest.raises(protocol.NullTerminatorNotFoundError):
+            with pytest.raises(primitives.NullTerminatorNotFoundError):
                 protocol.Option.decode(input_bytes, offset)
 
         BAD_ASCII_CASES = [
@@ -508,18 +158,18 @@ class TestRequestPacket(object):
             ({
                 "is_write": True,
                 "filename": "test A",
-                "mode": protocol.TransferMode.MAIL,
+                "mode": primitives.TransferMode.MAIL,
             }, b"\x00\x02test A\x00mail\x00"),
             ({
                 "is_write": False,
                 "filename": "config",
-                "mode": protocol.TransferMode.NETASCII,
+                "mode": primitives.TransferMode.NETASCII,
             }, b"\x00\x01config\x00netascii\x00"),
             (
                 {
                     "is_write": True,
                     "filename": "bob@example.org",
-                    "mode": protocol.TransferMode.MAIL,
+                    "mode": primitives.TransferMode.MAIL,
                     # OrderedDict is necessary to ensure that the options are enumerated in a
                     # predictable order.
                     "options": OrderedDict([
@@ -532,7 +182,7 @@ class TestRequestPacket(object):
                 {
                     "is_write": False,
                     "filename": "config",
-                    "mode": protocol.TransferMode.NETASCII,
+                    "mode": primitives.TransferMode.NETASCII,
                     # OrderedDict is necessary to ensure that the options are enumerated in a
                     # predictable order.
                     "options": OrderedDict([
@@ -554,18 +204,18 @@ class TestRequestPacket(object):
             (b"\x00\x01purpose\x00netascii\x00", 0, {
                 "is_write": False,
                 "filename": "purpose",
-                "mode": protocol.TransferMode.NETASCII,
+                "mode": primitives.TransferMode.NETASCII,
             }),
             (b"\x00\x02application\x00octet\x00", 0, {
                 "is_write": True,
                 "filename": "application",
-                "mode": protocol.TransferMode.OCTET,
+                "mode": primitives.TransferMode.OCTET,
             }),
             (b"\x00\x02application\x00octet\x00"
              b"tsize\x0043221030\x00blksize\x001428\x00windowsize\x0016\x00", 0, {
                  "is_write": True,
                  "filename": "application",
-                 "mode": protocol.TransferMode.OCTET,
+                 "mode": primitives.TransferMode.OCTET,
                  "options": {
                      "tsize": "43221030",
                      "blksize": "1428",
@@ -587,7 +237,7 @@ class TestRequestPacket(object):
         BAD_VALUE_CASES = [
             (b"\x00\x03dowhat\x00netascii\x00",
              ValueError),  # Wrong packet type (correct structure)
-            (b"\x00\x01another\x00invalid\x00", protocol.TransferMode.UnknownTransferModeError),
+            (b"\x00\x01another\x00invalid\x00", primitives.TransferMode.UnknownTransferModeError),
         ]
 
         @pytest.mark.parametrize("packet,exp_error", BAD_VALUE_CASES)
@@ -598,10 +248,10 @@ class TestRequestPacket(object):
                 protocol.RequestPacket.decode(packet)
 
         BAD_STRUCTURE_CASES = [
-            (b"\x00\x01uh oh the string isn't terminated", protocol.NullTerminatorNotFoundError),
-            (b"\x00\x02nomode??\x00", protocol.NullTerminatorNotFoundError),
-            (b"\x00\x01", protocol.NullTerminatorNotFoundError),  # No file name or transfer mode
-            (b"", protocol.struct.error),  # Entirely empty
+            (b"\x00\x01uh oh the string isn't terminated", primitives.NullTerminatorNotFoundError),
+            (b"\x00\x02nomode??\x00", primitives.NullTerminatorNotFoundError),
+            (b"\x00\x01", primitives.NullTerminatorNotFoundError),  # No file name or transfer mode
+            (b"", primitives.struct.error),  # Entirely empty
         ]
 
         @pytest.mark.parametrize("packet,exp_error", BAD_STRUCTURE_CASES)
@@ -615,7 +265,7 @@ class TestRequestPacket(object):
         """Runs the RequestPacket.__repr__() function just to ensure that it doesn't raise
         exceptions or cause parsing errors.
         """
-        assert repr(protocol.RequestPacket(True, "file", protocol.TransferMode.ASCII))
+        assert repr(protocol.RequestPacket(True, "file", primitives.TransferMode.ASCII))
 
 
 class TestErrorPacket(object):
@@ -623,15 +273,15 @@ class TestErrorPacket(object):
     class TestEncode(object):
         NOMINAL_CASES = [
             ({
-                "code": protocol.ErrorCode.FILE_NOT_FOUND,
+                "code": primitives.ErrorCode.FILE_NOT_FOUND,
                 "message": "File not found",
             }, b"\x00\x05\x00\x01File not found\x00"),
             ({
-                "code": protocol.ErrorCode.CUSTOM,
+                "code": primitives.ErrorCode.CUSTOM,
                 "message": "Hi there!",
             }, b"\x00\x05\x00\x00Hi there!\x00"),
             ({
-                "code": protocol.ErrorCode.OPTION_FAILURE,
+                "code": primitives.ErrorCode.OPTION_FAILURE,
                 "message": "windowsize too small",
             }, b"\x00\x05\x00\x08windowsize too small\x00"),
         ]
@@ -645,11 +295,11 @@ class TestErrorPacket(object):
     class TestDecode(object):
         NOMINAL_CASES = [
             (b"\x00\x05\x00\x00This is a custom error\x00", 0, {
-                "code": protocol.ErrorCode.CUSTOM,
+                "code": primitives.ErrorCode.CUSTOM,
                 "message": "This is a custom error",
             }),
             (b"\x00\x05\x00\x06This file already exists.\x00", 0, {
-                "code": protocol.ErrorCode.FILE_EXISTS,
+                "code": primitives.ErrorCode.FILE_EXISTS,
                 "message": "This file already exists.",
             }),
         ]
@@ -664,7 +314,7 @@ class TestErrorPacket(object):
 
         BAD_VALUE_CASES = [
             (b"\x00\x01\x00\x00what?\x00", ValueError),  # Wrong packet type (correct structure)
-            (b"\x00\x05\x00\x20strange error\x00", protocol.ErrorCode.UnknownErrorCodeError),
+            (b"\x00\x05\x00\x20strange error\x00", primitives.ErrorCode.UnknownErrorCodeError),
         ]
 
         @pytest.mark.parametrize("packet,exp_error", BAD_VALUE_CASES)
@@ -675,9 +325,9 @@ class TestErrorPacket(object):
                 protocol.ErrorPacket.decode(packet)
 
         BAD_STRUCTURE_CASES = [
-            (b"\x00\x05\x00\x02", protocol.NullTerminatorNotFoundError),  # No error message
-            (b"\x00\x05", protocol.struct.error),  # No error code
-            (b"", protocol.struct.error),  # Entirely empty
+            (b"\x00\x05\x00\x02", primitives.NullTerminatorNotFoundError),  # No error message
+            (b"\x00\x05", primitives.struct.error),  # No error code
+            (b"", primitives.struct.error),  # Entirely empty
         ]
 
         @pytest.mark.parametrize("packet,exp_error", BAD_STRUCTURE_CASES)
@@ -691,4 +341,4 @@ class TestErrorPacket(object):
         """Runs the ErrorPacket.__repr__() function just to ensure that it doesn't raise exceptions
         or cause parsing errors.
         """
-        assert repr(protocol.ErrorPacket(protocol.ErrorCode.NO_SUCH_USER, "No such user"))
+        assert repr(protocol.ErrorPacket(primitives.ErrorCode.NO_SUCH_USER, "No such user"))
