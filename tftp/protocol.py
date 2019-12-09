@@ -382,3 +382,71 @@ class DataPacket(object):
         next_offset = len(byte_arr)
 
         return DataPacket(decoded_block_num, decoded_data), next_offset
+
+
+class AckPacket(object):
+    """Representation of an ACK packet.
+
+    OACK packets, as introduced by RFC 2347, are represented by the OackPacket class.
+
+    Attributes:
+        block_num (int): The block number being acknowledged (or 0 if acknowledging a WRQ or OACK).
+    """
+
+    def __init__(self, block_num):
+        """Creates an AckPacket from Python values.
+
+        See also: AckPacket.decode(), for parsing from a byte array.
+
+        Args:
+            block_num (int): The block number being acknowledged (or 0 if acknowledging a WRQ or
+                OACK).
+        """
+        self.block_num = block_num
+
+    def __repr__(self):
+        """Returns a succinct representation of this AckPacket as a string.
+
+        Returns:
+            str: Accurate and succinct description of this AckPacket.
+        """
+        return _generate_repr(self.__class__, block_num=self.block_num)
+
+    def encode(self):
+        """Encodes the AckPacket into a byte array to send it over the network.
+
+        Returns:
+            bytes: A byte array encoding the ACK packet.
+
+        Raises:
+            struct.error: If the block number is not a valid uint16.
+        """
+        packet = []
+        packet.append(primitives.PacketType.encode(primitives.PacketType.ACK))
+        packet.append(primitives.encode_uint16(self.block_num))
+        return b"".join(packet)
+
+    @staticmethod
+    def decode(byte_arr, offset=0):
+        """Decodes an AckPacket from a byte array received from the network.
+
+        Args:
+            byte_arr (bytes): The byte array to decode.
+            offset (int): The offset into the byte array to start decoding. Defaults to 0.
+
+        Returns:
+            AckPacket: The decoded packet.
+
+        Raises:
+            ValueError: If the packet given has the wrong type (i.e. not ACK).
+            PacketType.UnknownPacketTypeError: If the packet has an unrecognized type.
+            struct.error: If the packet didn't include enough bytes for the packet type and block
+                number fields.
+        """
+        decoded_type, next_offset = primitives.PacketType.decode(byte_arr, offset)
+        if decoded_type != primitives.PacketType.ACK:
+            # TODO: Should we make a custom exception type? Is TypeError better here?
+            raise ValueError("Not an ACK packet.", decoded_type, byte_arr, offset)
+
+        decoded_block_num, next_offset = primitives.decode_uint16(byte_arr, next_offset)
+        return AckPacket(decoded_block_num), next_offset

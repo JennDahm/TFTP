@@ -389,9 +389,10 @@ class TestDataPacket(object):
                 "block_num": 33,
                 "data": b"some test data",
             }),
+            # No data is perfectly fine!
             (b"\x00\x03\xff\xff", 0, {
                 "block_num": 0xffff,
-                "data": b"",  # No data is perfectly fine!
+                "data": b"",
             }),
             (b"\x12\x34\x56\x00\x03\x00\x21some test data", 3, {
                 "block_num": 33,
@@ -439,3 +440,94 @@ class TestDataPacket(object):
         or cause parsing errors.
         """
         assert repr(protocol.DataPacket(30, b"This is some binary data"))
+
+
+class TestAckPacket(object):
+
+    class TestEncode(object):
+        NOMINAL_CASES = [
+            # 0 is okay for ACK packets!
+            ({
+                "block_num": 0,
+            }, b"\x00\x04\x00\x00"),
+            ({
+                "block_num": 33,
+            }, b"\x00\x04\x00\x21"),
+        ]
+
+        @pytest.mark.parametrize("packet_kwargs,exp_output", NOMINAL_CASES)
+        def test_nominal(self, packet_kwargs, exp_output):
+            """Tests nominal encoding of AckPackets.
+            """
+            assert protocol.AckPacket(**packet_kwargs).encode() == exp_output
+
+        BAD_VALUE_CASES = [
+            # Too big for a uint16
+            ({
+                "block_num": 77777,
+            }, primitives.struct.error),
+            # Too negative for a uint16
+            ({
+                "block_num": -22,
+            }, primitives.struct.error),
+        ]
+
+        @pytest.mark.parametrize("packet_kwargs,exp_error", BAD_VALUE_CASES)
+        def test_bad_values(self, packet_kwargs, exp_error):
+            """Tests encoding of AckPackets with bad block numbers.
+            """
+            with pytest.raises(exp_error):
+                protocol.AckPacket(**packet_kwargs).encode()
+
+    class TestDecode(object):
+        NOMINAL_CASES = [
+            (b"\x00\x04\x00\x00", 0, {
+                "block_num": 0
+            }),
+            (b"\x00\x04\x00\x15", 0, {
+                "block_num": 21
+            }),
+            (b"\x12\x34\x56\x78\x00\x04\x00\x25", 4, {
+                "block_num": 37
+            }),
+        ]
+
+        @pytest.mark.parametrize("packet,offset,exp_output_kwargs", NOMINAL_CASES)
+        def test_nominal(self, packet, offset, exp_output_kwargs):
+            """Tests nominal decoding of AckPackets.
+            """
+            exp_output = protocol.AckPacket(**exp_output_kwargs)
+            decoded, next_offset = protocol.AckPacket.decode(packet, offset)
+            assert next_offset == offset + 4
+            assert decoded.block_num == exp_output.block_num
+
+        BAD_VALUE_CASES = [
+            (b"\x00\x01\x00\x01wrong packet type", 0, ValueError),
+            (b"\x12\x34\x00\x00unknown type", 0, primitives.PacketType.UnknownPacketTypeError),
+        ]
+
+        @pytest.mark.parametrize("packet,offset,exp_error", BAD_VALUE_CASES)
+        def test_bad_values(self, packet, offset, exp_error):
+            """Tests the behaviour of AckPacket.decode() when given input with invalid values.
+            """
+            with pytest.raises(exp_error):
+                protocol.AckPacket.decode(packet)
+
+        BAD_STRUCTURE_CASES = [
+            (b"\x00\x04", 0, primitives.struct.error),  # Missing "block num" field
+            (b"", 0, primitives.struct.error),  # Missing "packet type" field
+            (b"\x00\x04", 2, primitives.struct.error),  # Missing "packet type" field after offset
+        ]
+
+        @pytest.mark.parametrize("packet,offset,exp_error", BAD_STRUCTURE_CASES)
+        def test_bad_structure(self, packet, offset, exp_error):
+            """Tests the behaviour of AckPacket.decode() when given input with bad structure.
+            """
+            with pytest.raises(exp_error):
+                protocol.AckPacket.decode(packet)
+
+    def test_repr_coverage_only(self):
+        """Runs the AckPacket.__repr__() function just to ensure that it doesn't raise exceptions
+        or cause parsing errors.
+        """
+        assert repr(protocol.AckPacket(22))
