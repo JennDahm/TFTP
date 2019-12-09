@@ -293,3 +293,92 @@ class ErrorPacket(object):
         decoded_msg, next_offset = primitives.decode_str(byte_arr, next_offset)
 
         return ErrorPacket(decoded_code, decoded_msg), next_offset
+
+
+class DataPacket(object):
+    """Representation of a data packet.
+
+    This class does not attempt to manage any kind of session logic, such as block size or
+    transaction termination. It is simply a plain representation of the packet itself.
+
+    Attributes:
+        block_num (int): The block number of this data packet.
+        data (bytes): The byte data of this packet. When creating and consuming these packets, make
+            sure to respect the transfer mode. That is, if the transfer mode is NETASCII, you
+            should encode your content as ASCII before writing to this attribute and decode them
+            when reading from it; if the transfer mode is OCTET, you don't need to encode or decode.
+    """
+
+    def __init__(self, block_num, data):
+        """Creates a DataPacket from Python values.
+
+        See also: DataPacket.decode(), for parsing from a byte array.
+
+        Attributes:
+            block_num (int): The block number of this data packet.
+            data (bytes): The byte data of this packet. Make sure to respect the transfer mode of
+                the current operation. That is, if the transfer mode is NETASCII, you should encode
+                your content as ASCII before providing it to this constructor; if the transfer mode
+                is OCTET, you don't need to encode your content.
+        """
+        self.block_num = block_num
+        self.data = data
+
+    def __repr__(self):
+        """Returns a succinct representation of this DataPacket as a string.
+
+        Returns:
+            str: Accurate and succinct description of this DataPacket.
+        """
+        return _generate_repr(self.__class__, block_num=self.block_num, data=self.data)
+
+    def encode(self):
+        """Encodes the DataPacket into a byte array to send it over the network.
+
+        Returns:
+            bytes: A byte array encoding the data packet.
+
+        Raises:
+            ValueError: If the block number is zero.
+            struct.error: If the block number is not a valid uint16.
+            TypeError: If the data is not a bytes-like object.
+        """
+        if self.block_num == 0:
+            raise ValueError("Data block numbers start at one, not zero!")
+        packet = []
+        packet.append(primitives.PacketType.encode(primitives.PacketType.DATA))
+        packet.append(primitives.encode_uint16(self.block_num))
+        packet.append(self.data)
+        return b"".join(packet)
+
+    @staticmethod
+    def decode(byte_arr, offset=0):
+        """Decodes a DataPacket from a byte array received from the network.
+
+        Args:
+            byte_arr (bytes): The byte array to decode.
+            offset (int): The offset into the byte array to start decoding. Defaults to 0.
+
+        Returns:
+            DataPacket: The decoded packet.
+
+        Raises:
+            ValueError: If the packet given has the wrong type (i.e. not DATA) or if the decoded
+                block number is zero (which is invalid for DATA packets).
+            PacketType.UnknownPacketTypeError: If the packet has an unrecognized type.
+            struct.error: If the packet didn't include enough bytes for the packet type and block
+            number fields.
+        """
+        decoded_type, next_offset = primitives.PacketType.decode(byte_arr, offset)
+        if decoded_type != primitives.PacketType.DATA:
+            # TODO: Should we make a custom exception type? Is TypeError better here?
+            raise ValueError("Not a data packet.", decoded_type, byte_arr, offset)
+
+        decoded_block_num, next_offset = primitives.decode_uint16(byte_arr, next_offset)
+        if decoded_block_num == 0:
+            raise ValueError("Data block numbers start at one, not zero!")
+
+        decoded_data = byte_arr[next_offset:]
+        next_offset = len(byte_arr)
+
+        return DataPacket(decoded_block_num, decoded_data), next_offset
