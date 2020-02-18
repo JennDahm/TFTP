@@ -7,10 +7,10 @@ don't seem to be any good libraries. I'd like to fix that.
 
 Some goals for this project:
 
-* **Support for both Python 2.7 and Python 3.8.** Python 2.7 may be EOL at the
-    end of 2019, but I want to maintain support for it for those poor schmucks
+* **Support for both Python 2.7 and Python 3.7.** Python 2.7 may be EOL at the
+    end of 2019, but I want to maintain support for it for those poor souls
     who still have to use it for one reason or another (myself included!).
-* **Easy to use.** It should be as simple to set up a client as:
+* **Easy to use.** It should be (approximately) as simple to set up a client as:
     ```python
     import tftp
     client = tftp.Client("127.0.0.1")
@@ -21,12 +21,10 @@ Some goals for this project:
     to sacrifice the advanced users just to make basic uses simple.
 * **Lightweight.** You shouldn't need to pull in a ton of dependencies into
     your project just to run TFTP.
-* **Extensible.** Let's face it: I'm not going to implement every feature that
-    everyone will want. I intend to fully support RFC 1350 (the base TFTP
-    specification), but there are four other specifications that extend it
-    (RFCs 1785, 2347, 2348, and 2349) and many others customizations users may
-    want. I can't support everything, but I want to support extending this
-    library as best as I can.
+* **Complete.** I intend to fully support RFC 1350 (the base TFTP specification)
+    and the most common extensions (RFC 2347 "TFTP Option Extension", RFC 2348
+    "TFTP Blocksize Option", RFC 2349 "TFTP Timeout Interval and Transfer Size
+    Options", and RFC 7440 "TFTP Windowsize Option").
 * **Well-tested.** There's not much good in a library if it's buggy! I want to
     make sure this library is automatically tested with every commit.
     Unfortunately, I don't have a server to set up CI, but I'll be writing
@@ -41,5 +39,5 @@ Some not-goals for this project:
 
 ----
 
-Python TFTP is Copyright (c) 2019 Jennifer Dahm and licensed under the MIT
+Python TFTP is Copyright (c) 2019-2020 Jennifer Dahm and licensed under the MIT
 License. See the LICENSE file alongside this README.
