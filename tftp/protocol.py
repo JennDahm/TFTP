@@ -450,3 +450,72 @@ class AckPacket(object):
 
         decoded_block_num, next_offset = primitives.decode_uint16(byte_arr, next_offset)
         return AckPacket(decoded_block_num), next_offset
+
+
+class OackPacket(object):
+    """Representation of an OACK packet.
+
+    OACK packets were introduced by RFC 2347, and are slightly different from ACK packets.
+
+    Attributes:
+        options (dict(str, str)): The TFTP options to include in the OACK.
+    """
+
+    def __init__(self, options):
+        """Creates an OackPacket from Python values.
+
+        See also: OackPacket.decode(), for parsing from a byte array.
+
+        Args:
+            options (dict(str, str)): The TFTP options to include in the OACK.
+        """
+        self.options = options
+
+    def __repr__(self):
+        """Returns a succinct representation of this OackPacket as a string.
+
+        Returns:
+            str: Accurate and succinct description of this OackPacket.
+        """
+        return _generate_repr(self.__class__, options=self.options)
+
+    def encode(self):
+        """Encodes the OackPacket into a byte array to send it over the network.
+
+        Returns:
+            bytes: A byte array encoding the OACK packet.
+        """
+        packet = []
+        packet.append(primitives.PacketType.encode(primitives.PacketType.OACK))
+        packet.extend([Option(name, value).encode() for name, value in self.options.items()])
+        return b"".join(packet)
+
+    @staticmethod
+    def decode(byte_arr, offset=0):
+        """Decodes an OackPacket from a byte array received from the network.
+
+        Args:
+            byte_arr (bytes): The byte array to decode.
+            offset (int): The offset into the byte array to start decoding. Defaults to 0.
+
+        Returns:
+            OackPacket: The decoded packet.
+
+        Raises:
+            ValueError: If the packet given has the wrong type (i.e. not OACK).
+            PacketType.UnknownPacketTypeError: If the packet has an unrecognized type.
+            NullTerminatorNotFoundError: If the packet included an incomplete option (i.e. name,
+                but no value).
+            struct.error: If the packet didn't include enough bytes for the packet type field.
+        """
+        decoded_type, next_offset = primitives.PacketType.decode(byte_arr, offset)
+        if decoded_type != primitives.PacketType.OACK:
+            # TODO: Should we make a custom exception type? Is TypeError better here?
+            raise ValueError("Not an OACK packet.", decoded_type, byte_arr, offset)
+
+        decoded_options = {}
+        while next_offset != len(byte_arr):
+            option, next_offset = Option.decode(byte_arr, next_offset)
+            decoded_options[option.name] = option.value
+
+        return OackPacket(decoded_options)

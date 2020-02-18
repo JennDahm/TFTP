@@ -531,3 +531,71 @@ class TestAckPacket(object):
         or cause parsing errors.
         """
         assert repr(protocol.AckPacket(22))
+
+
+class TestOackPacket(object):
+
+    class TestEncode(object):
+        # OrderedDict is necessary to ensure that the options are enumerated in a predictable order.
+        NOMINAL_CASES = [
+            (OrderedDict([
+                ("timeout", "5"),
+            ]), b"\x00\x06timeout\x005\x00"),
+            (OrderedDict([
+                ("windowsize", "2020"),
+                ("timeout", "5"),
+                ("blocksize", "1024"),
+            ]), b"\x00\x06windowsize\x002020\x00timeout\x005\x00blocksize\x001024\x00"),
+            (OrderedDict([]), b"\x00\x06"),
+        ]
+
+        @pytest.mark.parametrize("options,exp_output", NOMINAL_CASES)
+        def test_nominal(self, options, exp_output):
+            """Tests nominal encoding of OackPackets.
+            """
+            assert protocol.OackPacket(options).encode() == exp_output
+
+    class TestDecode(object):
+        NOMINAL_CASES = [
+            (b"\x00\x06", 0, {}),
+            (b"\x00\x06blah\x00blegh\x00", 0, {
+                "blah": "blegh",
+            }),
+        ]
+
+        @pytest.mark.parametrize("packet,offset,exp_options", NOMINAL_CASES)
+        def test_nominal(self, packet, offset, exp_options):
+            """Tests nominal decoding of OackPackets.
+            """
+            decoded = protocol.OackPacket.decode(packet, offset)
+            assert decoded.options == exp_options
+
+        BAD_VALUE_CASES = [
+            (b"\x00\x01", ValueError),  # Wrong packet type
+        ]
+
+        @pytest.mark.parametrize("packet,exp_error", BAD_VALUE_CASES)
+        def test_bad_values(self, packet, exp_error):
+            """Tests the behaviour of OackPacket.decode() when given input with invalid values.
+            """
+            with pytest.raises(exp_error):
+                protocol.OackPacket.decode(packet)
+
+        BAD_STRUCTURE_CASES = [
+            (b"\x00\x06oh no no termination", primitives.NullTerminatorNotFoundError),
+            (b"\x00\x06option, but where's the value?\x00", primitives.NullTerminatorNotFoundError),
+            (b"\x06", primitives.struct.error),  # Not a full packet type.
+        ]
+
+        @pytest.mark.parametrize("packet,exp_error", BAD_STRUCTURE_CASES)
+        def test_bad_structure(self, packet, exp_error):
+            """Tests the behaviour of OackPacket.decode() when given badly structured input.
+            """
+            with pytest.raises(exp_error):
+                protocol.OackPacket.decode(packet)
+
+    def test_repr_coverage_only(self):
+        """Runs the OackPacket.__repr__() function just to ensure that it doesn't raise
+        exceptions or cause parsing errors.
+        """
+        assert repr(protocol.OackPacket({"hello": "world", "foo": "bar"}))
